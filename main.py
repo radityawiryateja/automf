@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from datetime import datetime
+from datetime import datetime, timezone
 
 # ==========================================
 # 1. KONFIGURASI & INIT
