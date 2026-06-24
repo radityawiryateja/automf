@@ -5,11 +5,11 @@ import itertools
 import logging
 import html
 import aiohttp
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
-from datetime import datetime
-from datetime import datetime, timezone
+from telethon.tl.functions.account import UpdateStatusRequest
 
 # ==========================================
 # 1. KONFIGURASI & INIT
@@ -69,15 +69,33 @@ ubot2 = TelegramClient(StringSession(os.getenv("UBOT2_SESSION")), API_ID, API_HA
 BOT_TOKENS = [os.getenv("BOT_TOKEN_1"), os.getenv("BOT_TOKEN_2")]
 bot_cycle = itertools.cycle(BOT_TOKENS)
 
-# Variabel untuk menampung koneksi HTTP permanen
+# Jalur Tol Permanen HTTP
 http_session = None
 
+
 # ==========================================
-# 2. FASE DETEKSI & JALUR API INSTAN
+# 2. FITUR BACKGROUND: ALWAYS ONLINE
+# ==========================================
+async def keep_always_online():
+    print("🟢 Pengaktif status 'Online' berjalan di background...")
+    while True:
+        try:
+            await ubot1(UpdateStatusRequest(offline=False))
+            await ubot2(UpdateStatusRequest(offline=False))
+        except Exception:
+            pass
+        await asyncio.sleep(300) # Update tiap 5 menit
+
+
+# ==========================================
+# 3. FASE DETEKSI & JALUR API INSTAN
 # ==========================================
 @ubot1.on(events.NewMessage(chats=TARGET_CHANNELS))
 async def detection_handler(event):
     try:
+        # [NEW] Auto-Read biar bubble di HP bersih!
+        await ubot1.send_read_acknowledge(event.chat_id, event.message.id)
+
         if not event.message.text:
             return
             
@@ -88,11 +106,9 @@ async def detection_handler(event):
             exact_chat_id = event.chat_id
             
             # CEK SELISIH WAKTU (DELAY JARINGAN)
-            msg_time = event.message.date # Waktu asli dari Telegram (UTC)
-            now_time = datetime.now(timezone.utc) # Waktu VPS sekarang (UTC)
+            msg_time = event.message.date 
+            now_time = datetime.now(timezone.utc)
             selisih_detik = (now_time - msg_time).total_seconds()
-            
-            # Kalau selisihnya di atas 5 detik, berarti ini pesan "basi" kiriman rombongan
             tanda_delay = f" ⚠️ (Telat {int(selisih_detik)}d dari server)" if selisih_detik > 5 else ""
             
             chat_str = str(exact_chat_id).replace('-100', '') if str(exact_chat_id).startswith('-100') else str(exact_chat_id)
@@ -121,9 +137,11 @@ async def detection_handler(event):
                     async with http_session.post(url, json=payload) as resp:
                         waktu = datetime.now().strftime("%H:%M:%S.%f")[:-3]
                         if resp.status == 200:
-                            print(f"[{waktu}] ⚡ [API] Target {chat_target} | Delay server: {int(selisih_detik)} detik", flush=True)
+                            print(f"[{waktu}] ⚡ [API] Target {chat_target} | Delay: {int(selisih_detik)}s", flush=True)
+                        else:
+                            print(f"[{waktu}] [❌ ERROR API] Response: {await resp.text()}", flush=True)
                 except Exception as e:
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] [❌ ERROR] API: {e}", flush=True)
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] [❌ ERROR JARINGAN] API: {e}", flush=True)
 
             asyncio.create_task(send_notif_http(current_token, notification_text, exact_chat_id))
             
@@ -132,7 +150,7 @@ async def detection_handler(event):
 
 
 # ==========================================
-# 3. FASE EKSEKUSI (UBOT 2)
+# 4. FASE EKSEKUSI (UBOT 2)
 # ==========================================
 @ubot2.on(events.NewMessage(chats=ADMIN_GROUP_ID, pattern=r'^/(\w+)'))
 async def command_handler(event):
@@ -158,13 +176,16 @@ async def command_handler(event):
         target_msg_id = int(ref_match.group(2))
         wording = TEMPLATES[command]
 
-        print(f"[⏳] Ubot 2 otw komen ke {target_chat}...")
+        waktu_eksekusi = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        print(f"[{waktu_eksekusi}] [⏳] Ubot 2 otw komen ke {target_chat}...", flush=True)
+        
         await ubot2.send_message(
             entity=target_chat,
             message=wording,
             comment_to=target_msg_id
         )
-        print(f"[✅] Komentar sukses!")
+        
+        print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [✅] Komentar sukses!", flush=True)
         
         try:
             await event.client.send_reaction(event.chat_id, event.message.id, '👍')
@@ -172,18 +193,17 @@ async def command_handler(event):
             pass 
             
     except Exception as e:
-        print(f"[❌ ERROR EKSEKUSI] {e}")
+        print(f"[❌ ERROR EKSEKUSI] {e}", flush=True)
 
 
 # ==========================================
-# 4. RUNNER 
+# 5. RUNNER
 # ==========================================
 async def main_loop():
     global http_session
     
     print("⏳ Menghidupkan Mesin Ubot...\n")
     
-    # 1. BUKA JALUR TOL PERMANEN UNTUK API DI SINI
     http_session = aiohttp.ClientSession()
     
     try:
@@ -200,13 +220,15 @@ async def main_loop():
 
     print("\n🚀 SISTEM ONLINE! (Mode API Super Kencang Aktif)\n")
     
+    # Jalankan Keep Online di background
+    asyncio.create_task(keep_always_online())
+
     try:
         await asyncio.gather(
             ubot1.run_until_disconnected(),
             ubot2.run_until_disconnected()
         )
     finally:
-        # Tutup jalan tol dengan rapi kalau bot dimatikan
         await http_session.close()
 
 if __name__ == '__main__':
