@@ -1,10 +1,8 @@
 import asyncio
 import os
 import re
-import itertools
 import logging
 import html
-import aiohttp
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
@@ -66,13 +64,6 @@ CLIENT_PARAMS = {"use_ipv6": False, "timeout": 30, "connection_retries": 10}
 ubot1 = TelegramClient(StringSession(os.getenv("UBOT1_SESSION")), API_ID, API_HASH, **CLIENT_PARAMS)
 ubot2 = TelegramClient(StringSession(os.getenv("UBOT2_SESSION")), API_ID, API_HASH, **CLIENT_PARAMS)
 
-BOT_TOKENS = [os.getenv("BOT_TOKEN_1"), os.getenv("BOT_TOKEN_2")]
-bot_cycle = itertools.cycle(BOT_TOKENS)
-
-# Jalur Tol Permanen HTTP
-http_session = None
-
-
 # ==========================================
 # 2. FITUR BACKGROUND: ALWAYS ONLINE
 # ==========================================
@@ -86,14 +77,13 @@ async def keep_always_online():
             pass
         await asyncio.sleep(300) # Update tiap 5 menit
 
-
 # ==========================================
-# 3. FASE DETEKSI & JALUR API INSTAN
+# 3. FASE DETEKSI & NOTIF MURNI UBOT 1
 # ==========================================
 @ubot1.on(events.NewMessage(chats=TARGET_CHANNELS))
 async def detection_handler(event):
     try:
-        # [NEW] Auto-Read biar bubble di HP bersih!
+        # Auto-Read biar bubble di HP bersih
         await ubot1.send_read_acknowledge(event.chat_id, event.message)
 
         if not event.message.text:
@@ -116,7 +106,6 @@ async def detection_handler(event):
             
             safe_text = html.escape(text[:150])
             
-            # Penghapusan tag HTML hyperlink pada link pesan
             notification_text = (
                 f"🚨 <b>Menfess Terdeteksi!</b>{tanda_delay}\n\n"
                 f"<b>Pesan:</b> {safe_text}...\n"
@@ -125,30 +114,16 @@ async def detection_handler(event):
                 f"<code>REF:{exact_chat_id}:{msg_id}</code>" 
             )
             
-            current_token = next(bot_cycle)
-            
-            async def send_notif_http(token, text_payload):
-                url = f"https://api.telegram.org/bot{token}/sendMessage"
-                payload = {
-                    "chat_id": ADMIN_GROUP_ID,
-                    "text": text_payload,
-                    "parse_mode": "HTML",
-                    "disable_web_page_preview": True
-                }
-                try:
-                    async with http_session.post(url, json=payload) as resp:
-                        # Log sukses dihapus, hanya mem-print error jika API Telegram menolak (status != 200)
-                        if resp.status != 200:
-                            waktu = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-                            print(f"[{waktu}] [❌ ERROR API] Response: {await resp.text()}", flush=True)
-                except Exception as e:
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] [❌ ERROR JARINGAN] API: {e}", flush=True)
-
-            asyncio.create_task(send_notif_http(current_token, notification_text))
+            # UBOT 1 LANGSUNG MENGIRIM PESAN KE GRUP ADMIN
+            await ubot1.send_message(
+                entity=ADMIN_GROUP_ID,
+                message=notification_text,
+                parse_mode="html",
+                link_preview=False
+            )
             
     except Exception as e:
         print(f"[❌ ERROR DETEKSI] {e}", flush=True)
-
 
 # ==========================================
 # 4. FASE EKSEKUSI (UBOT 2)
@@ -177,7 +152,7 @@ async def command_handler(event):
         target_msg_id = int(ref_match.group(2))
         wording = TEMPLATES[command]
         
-        # Eksekusi kirim pesan secara hening (tanpa print log)
+        # Eksekusi kirim pesan secara hening
         await ubot2.send_message(
             entity=target_chat,
             message=wording,
@@ -192,16 +167,11 @@ async def command_handler(event):
     except Exception as e:
         print(f"[❌ ERROR EKSEKUSI] {e}", flush=True)
 
-
 # ==========================================
 # 5. RUNNER
 # ==========================================
 async def main_loop():
-    global http_session
-    
     print("⏳ Menghidupkan Mesin Ubot...\n")
-    
-    http_session = aiohttp.ClientSession()
     
     try:
         print("-> Starting Ubot 1 (Detector)...")
@@ -215,18 +185,14 @@ async def main_loop():
     except Exception as e:
         print(f"[❌ ERROR] Ubot 2 gagal: {e}")
 
-    print("\n🚀 SISTEM ONLINE! (Mode API Super Kencang Aktif)\n")
+    print("\n🚀 SISTEM ONLINE! (Mode Murni MTProto Aktif)\n")
     
-    # Jalankan Keep Online di background
     asyncio.create_task(keep_always_online())
 
-    try:
-        await asyncio.gather(
-            ubot1.run_until_disconnected(),
-            ubot2.run_until_disconnected()
-        )
-    finally:
-        await http_session.close()
+    await asyncio.gather(
+        ubot1.run_until_disconnected(),
+        ubot2.run_until_disconnected()
+    )
 
 if __name__ == '__main__':
     try:
