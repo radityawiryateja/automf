@@ -14,7 +14,7 @@ try:
     API_ID = int(os.getenv("API_ID"))
     API_HASH = os.getenv("API_HASH")
     # Kita cuma butuh 1 akun sekarang!
-    SESSION = os.getenv("UBOT1_SESSION")
+    SESSION = os.getenv("UBOT2_SESSION")
 except Exception as e:
     print(f"[❌ FATAL ERROR] Cek lagi file .env kamu: {e}")
     exit(1)
