@@ -94,7 +94,7 @@ async def keep_always_online():
 async def detection_handler(event):
     try:
         # [NEW] Auto-Read biar bubble di HP bersih!
-        await ubot1.send_read_acknowledge(event.chat_id, event.message.id)
+        await ubot1.send_read_acknowledge(event.chat_id, event.message)
 
         if not event.message.text:
             return
