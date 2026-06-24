@@ -115,17 +115,19 @@ async def detection_handler(event):
             msg_link = f"https://t.me/c/{chat_str}/{msg_id}"
             
             safe_text = html.escape(text[:150])
+            
+            # Penghapusan tag HTML hyperlink pada link pesan
             notification_text = (
                 f"🚨 <b>Menfess Terdeteksi!</b>{tanda_delay}\n\n"
                 f"<b>Pesan:</b> {safe_text}...\n"
-                f"🔗 <b>Link:</b> <a href='{msg_link}'>Cek Kesini</a>\n\n"
+                f"🔗 <b>Link:</b> {msg_link}\n\n"
                 f"💬 <i>Balas pesan ini dengan command</i>\n\n"
                 f"<code>REF:{exact_chat_id}:{msg_id}</code>" 
             )
             
             current_token = next(bot_cycle)
             
-            async def send_notif_http(token, text_payload, chat_target):
+            async def send_notif_http(token, text_payload):
                 url = f"https://api.telegram.org/bot{token}/sendMessage"
                 payload = {
                     "chat_id": ADMIN_GROUP_ID,
@@ -135,15 +137,14 @@ async def detection_handler(event):
                 }
                 try:
                     async with http_session.post(url, json=payload) as resp:
-                        waktu = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-                        if resp.status == 200:
-                            print(f"[{waktu}] ⚡ [API] Target {chat_target} | Delay: {int(selisih_detik)}s", flush=True)
-                        else:
+                        # Log sukses dihapus, hanya mem-print error jika API Telegram menolak (status != 200)
+                        if resp.status != 200:
+                            waktu = datetime.now().strftime("%H:%M:%S.%f")[:-3]
                             print(f"[{waktu}] [❌ ERROR API] Response: {await resp.text()}", flush=True)
                 except Exception as e:
                     print(f"[{datetime.now().strftime('%H:%M:%S')}] [❌ ERROR JARINGAN] API: {e}", flush=True)
 
-            asyncio.create_task(send_notif_http(current_token, notification_text, exact_chat_id))
+            asyncio.create_task(send_notif_http(current_token, notification_text))
             
     except Exception as e:
         print(f"[❌ ERROR DETEKSI] {e}", flush=True)
@@ -175,17 +176,13 @@ async def command_handler(event):
         target_chat = int(ref_match.group(1))
         target_msg_id = int(ref_match.group(2))
         wording = TEMPLATES[command]
-
-        waktu_eksekusi = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        print(f"[{waktu_eksekusi}] [⏳] Ubot 2 otw komen ke {target_chat}...", flush=True)
         
+        # Eksekusi kirim pesan secara hening (tanpa print log)
         await ubot2.send_message(
             entity=target_chat,
             message=wording,
             comment_to=target_msg_id
         )
-        
-        print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [✅] Komentar sukses!", flush=True)
         
         try:
             await event.client.send_reaction(event.chat_id, event.message.id, '👍')
